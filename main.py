@@ -7,18 +7,18 @@ from database import tasks_collection, users_collection
 from email_service import send_reminder_email
 from apscheduler.schedulers.background import BackgroundScheduler
 import datetime
+import os
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ── Models ──
 class Task(BaseModel):
     title: str
     description: Optional[str] = ""
@@ -32,12 +32,10 @@ class User(BaseModel):
     email: str
     password: str
 
-# ── Helper ──
 def fix_id(doc):
     doc["_id"] = str(doc["_id"])
     return doc
 
-# ── Scheduler ──
 def check_deadlines():
     print("🔍 Checking deadlines...")
     tomorrow = (datetime.date.today() + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
@@ -50,9 +48,6 @@ scheduler = BackgroundScheduler()
 scheduler.add_job(check_deadlines, "interval", hours=24, next_run_time=datetime.datetime.now())
 scheduler.start()
 
-# ══════════════════════════════
-#        AUTH ROUTES
-# ══════════════════════════════
 @app.post("/signup")
 def signup(user: User):
     existing = users_collection.find_one({"email": user.email})
@@ -68,9 +63,6 @@ def login(user: User):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     return {"message": "Login successful", "name": found["name"], "email": found["email"]}
 
-# ══════════════════════════════
-#        TASK ROUTES (CRUD)
-# ══════════════════════════════
 @app.post("/tasks")
 def create_task(task: Task):
     result = tasks_collection.insert_one(task.dict())
@@ -100,8 +92,12 @@ def toggle_task(task_id: str):
     tasks_collection.update_one({"_id": ObjectId(task_id)}, {"$set": {"status": new_status}})
     return {"message": "Status toggled", "status": new_status}
 
-# ── Manual Reminder Test ──
 @app.get("/send-reminders")
 def send_reminders():
     check_deadlines()
     return {"message": "Reminders checked and sent!"}
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
